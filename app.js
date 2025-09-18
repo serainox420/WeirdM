@@ -1,76 +1,15 @@
-// Cross-Origin-Embedder-Policy: require-corp
-// Cross-Origin-Opener-Policy: same-origin
+const filePicker = document.getElementById('filepicker');
+const startBtn = document.querySelector('.button.start');
+const timelineBody = document.getElementById('timeline-rows');
 
-const { createFFmpeg } = FFmpeg;
-
-let ffmpeg = createFFmpeg({ log: true });
-let detectedFps = "15";
-let fps = "15";
-let crf = "42";
-let mode = "bounce";
-
-const filePicker = document.getElementById("filepicker");
-const startBtn = document.querySelector(".button.start");
-const timelineBody = document.getElementById("timeline-rows");
-
-const setProgress = (percentage) => {
-    if (percentage >= 0) {
-        const pct = Math.min(100, Math.max(0, percentage));
-        startBtn.innerText = `Processing ${pct}%`;
-        startBtn.style.background = `linear-gradient(90deg, rgba(0, 175, 244, 0.85) ${pct}%, rgba(45, 125, 70, 0.4) ${pct}%)`;
-    } else {
-        startBtn.innerText = "Create WebM";
-        startBtn.style.background = "";
+const setProgress = (label, progress = null) => {
+    startBtn.textContent = label;
+    if (progress === null || Number.isNaN(progress)) {
+        startBtn.style.background = '';
+        return;
     }
-};
-
-const recycleFFmpeg = async () => {
-    const files = [];
-    try {
-        files.push(['input.avi', ffmpeg.FS('readFile', 'input.avi')]);
-        ffmpeg.FS('unlink', 'input.avi');
-    } catch {}
-    let i = 0;
-    while (true) {
-        i++;
-        const fn = i.toString().padStart(6, '0') + '.png';
-        try {
-            files.push([fn, ffmpeg.FS('readFile', fn)]);
-            ffmpeg.FS('unlink', fn);
-        } catch {
-            break;
-        }
-    }
-    i = 0;
-    while (true) {
-        const fn = i.toString() + '.webm';
-        try {
-            files.push([fn, ffmpeg.FS('readFile', fn)]);
-            ffmpeg.FS('unlink', fn);
-        } catch {
-            break;
-        }
-        i++;
-    }
-    try {
-        ffmpeg.exit();
-    } catch {}
-    ffmpeg = createFFmpeg({ log: true });
-    if (!ffmpeg.isLoaded()) await ffmpeg.load();
-    for (let j = 0; j < files.length; j++) {
-        ffmpeg.FS('writeFile', files[j][0], files[j][1]);
-        files[j][1] = null;
-    }
-};
-
-const makeWebmPart = async (inArgs, webmCount) => {
-    let concat = "";
-    inArgs.forEach((arg) => {
-        concat += `file ${arg}\n`;
-    });
-    ffmpeg.FS('writeFile', 'concat.txt', Uint8Array.from(concat.split('').map(letter => letter.charCodeAt(0))));
-    await ffmpeg.run('-y', '-f', 'concat', '-i', 'concat.txt', '-vf', `settb=AVTB,setpts=N/${fps}/TB,fps=${fps}`, '-pix_fmt', 'yuv420p', '-crf', crf, '-r', fps, webmCount + '.webm');
-    if (webmCount % 10 === 0) await recycleFFmpeg();
+    const pct = Math.min(100, Math.max(0, Math.round(progress)));
+    startBtn.style.background = `linear-gradient(90deg, rgba(0, 175, 244, 0.85) ${pct}%, rgba(45, 125, 70, 0.45) ${pct}%)`;
 };
 
 const clampNumber = (value, min, max, fallback) => {
@@ -88,27 +27,19 @@ const sanitizeRange = (minValue, maxValue, fallbackMin, fallbackMax) => {
     return { min, max };
 };
 
-const easingFunctions = {
-    linear: (t) => t,
-    easeIn: (t) => t * t,
-    easeOut: (t) => 1 - Math.pow(1 - t, 2),
-    easeInOut: (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2),
-};
-
-const modes = ["bounce", "random", "timeline", "trim"];
+const modes = ['bounce', 'random', 'timeline', 'trim'];
 
 const updateModeVisibility = () => {
-    modes.forEach((m) => {
-        const container = document.getElementById(`${m}-options`);
-        if (!container) return;
-        const radio = document.getElementById(m);
+    modes.forEach((mode) => {
+        const container = document.getElementById(`${mode}-options`);
+        const radio = document.getElementById(mode);
+        if (!container || !radio) return;
         container.hidden = !radio.checked;
     });
 };
 
 document.querySelectorAll('input[name="mode"]').forEach((input) => {
     input.addEventListener('change', () => {
-        mode = input.value;
         updateModeVisibility();
     });
 });
@@ -217,8 +148,12 @@ const createTimelineRow = ({ time, width, height, easing, lockTime = false, lock
 
 const initializeTimeline = () => {
     timelineBody.innerHTML = '';
-    timelineBody.appendChild(createTimelineRow({ time: 0, width: 100, height: 100, easing: 'linear', lockTime: true, lockRemove: true, disableEasing: true }));
-    timelineBody.appendChild(createTimelineRow({ time: 100, width: 100, height: 100, easing: 'linear', lockTime: true, lockRemove: true }));
+    timelineBody.appendChild(
+        createTimelineRow({ time: 0, width: 100, height: 100, easing: 'linear', lockTime: true, lockRemove: true, disableEasing: true })
+    );
+    timelineBody.appendChild(
+        createTimelineRow({ time: 100, width: 100, height: 100, easing: 'linear', lockTime: true, lockRemove: true })
+    );
 };
 
 const addTimelineRow = () => {
@@ -280,7 +215,12 @@ const readBounceSettings = () => {
         const style = document.getElementById(`bounce-${axis}-style`).value;
         const speed = clampNumber(document.getElementById(`bounce-${axis}-speed`).value, 1, 200, 10);
         const staticSize = clampNumber(document.getElementById(`bounce-${axis}-static`).value, 1, 400, 100);
-        const range = sanitizeRange(document.getElementById(`bounce-${axis}-min`).value, document.getElementById(`bounce-${axis}-max`).value, 70, 130);
+        const range = sanitizeRange(
+            document.getElementById(`bounce-${axis}-min`).value,
+            document.getElementById(`bounce-${axis}-max`).value,
+            70,
+            130
+        );
         return { style, speed, staticSize, min: range.min, max: range.max };
     };
     return {
@@ -292,7 +232,12 @@ const readBounceSettings = () => {
 const readRandomSettings = () => {
     const readAxis = (axis) => {
         const enabled = document.getElementById(`random-${axis}`).checked;
-        const range = sanitizeRange(document.getElementById(`random-${axis}-min`).value, document.getElementById(`random-${axis}-max`).value, 60, 140);
+        const range = sanitizeRange(
+            document.getElementById(`random-${axis}-min`).value,
+            document.getElementById(`random-${axis}-max`).value,
+            60,
+            140
+        );
         return { enabled, min: range.min, max: range.max };
     };
     return {
@@ -306,88 +251,8 @@ const readTrimSettings = () => ({
     padding: clampNumber(document.getElementById('trim-padding').value, 0, 50, 1),
 });
 
-const createResizeArgs = (size) => [
-    'convert',
-    'in.png',
-    '-resize',
-    size,
-    '-set',
-    'filename:mysize',
-    '%wx%h',
-    '%[filename:mysize]',
-];
-
-const createTrimArgs = (settings) => {
-    const args = ['convert', 'in.png'];
-    if (settings.fuzz > 0) {
-        args.push('-fuzz', `${settings.fuzz}%`);
-    }
-    args.push('-trim');
-    if (settings.padding > 0) {
-        const pad = `${settings.padding}x${settings.padding}`;
-        args.push('-shave', pad);
-    }
-    args.push('+repage', '-set', 'filename:mysize', '%wx%h', '%[filename:mysize]');
-    return args;
-};
-
-const computeBounceValue = (frame, fpsValue, axisSettings) => {
-    if (axisSettings.style === 'none') {
-        return Math.round(axisSettings.staticSize);
-    }
-    const { min, max, speed, style } = axisSettings;
-    const low = Math.min(min, max);
-    const high = Math.max(min, max);
-    const amplitude = (high - low) / 2;
-    const center = low + amplitude;
-    const trig = style === 'sin' ? Math.sin : Math.cos;
-    const t = (frame * speed) / Number(fpsValue || 1);
-    const value = center + trig(t) * amplitude;
-    return Math.round(Math.max(1, value));
-};
-
-const getBounceResize = (frame, fpsValue, settings) => {
-    const horizontal = computeBounceValue(frame, fpsValue, settings.horizontal);
-    const vertical = computeBounceValue(frame, fpsValue, settings.vertical);
-    return `${horizontal}%x${vertical}%`;
-};
-
-const randomBetween = (min, max) => Math.round(min + Math.random() * (max - min));
-
-const getRandomResize = (settings) => {
-    const width = settings.horizontal.enabled ? randomBetween(settings.horizontal.min, settings.horizontal.max) : 100;
-    const height = settings.vertical.enabled ? randomBetween(settings.vertical.min, settings.vertical.max) : 100;
-    return `${width}%x${height}%`;
-};
-
-const getTimelineResize = (frame, framesTotal, keyframes) => {
-    if (!keyframes.length) return '100%x100%';
-    if (keyframes.length === 1) {
-        const only = keyframes[0];
-        return `${only.width}%x${only.height}%`;
-    }
-    const total = Math.max(1, framesTotal - 1);
-    const progressPercent = ((frame - 1) / total) * 100;
-    let previous = keyframes[0];
-    for (let i = 1; i < keyframes.length; i++) {
-        const current = keyframes[i];
-        if (progressPercent <= current.time || i === keyframes.length - 1) {
-            const span = current.time - previous.time;
-            const spanSafe = span <= 0 ? 1 : span;
-            const local = (progressPercent - previous.time) / spanSafe;
-            const eased = easingFunctions[current.easing]?.(Math.min(1, Math.max(0, local))) ?? easingFunctions.linear(Math.min(1, Math.max(0, local)));
-            const width = Math.round(previous.width + (current.width - previous.width) * eased);
-            const height = Math.round(previous.height + (current.height - previous.height) * eased);
-            return `${width}%x${height}%`;
-        }
-        previous = current;
-    }
-    const last = keyframes[keyframes.length - 1];
-    return `${last.width}%x${last.height}%`;
-};
-
 const gatherSettings = () => {
-    const selectedMode = modes.find((m) => document.getElementById(m)?.checked) || 'bounce';
+    const selectedMode = modes.find((mode) => document.getElementById(mode)?.checked) || 'bounce';
     const crfValue = clampNumber(document.getElementById('crf').value, 0, 63, 42);
     const fpsValueRaw = document.getElementById('output-fps').value;
     const fpsOverride = fpsValueRaw ? clampNumber(fpsValueRaw, 1, 240, null) : null;
@@ -402,91 +267,6 @@ const gatherSettings = () => {
     if (selectedMode === 'timeline') settings.timeline = getTimelineRows();
 
     return settings;
-};
-
-const makeVideo = async (file, options) => {
-    setProgress(0);
-    if (!ffmpeg.isLoaded()) await ffmpeg.load();
-    setProgress(5);
-    ffmpeg.FS('writeFile', 'input.avi', file);
-
-    detectedFps = '15';
-    ffmpeg.setLogger(({ type, message }) => {
-        if (type === 'fferr' && message.includes(' fps')) {
-            const parts = message.split(' fps')[0].trim().split(' ');
-            detectedFps = parts.pop();
-        }
-    });
-    await ffmpeg.run('-y', '-i', 'input.avi');
-    ffmpeg.setLogger(() => {});
-
-    fps = options.fpsOverride || detectedFps || '15';
-    crf = options.crf || '42';
-
-    await ffmpeg.run('-y', '-i', 'input.avi', '%06d.png');
-    setProgress(10);
-
-    let framesTotal = 0;
-    while (true) {
-        framesTotal++;
-        const fn = framesTotal.toString().padStart(6, '0') + '.png';
-        try {
-            ffmpeg.FS('readFile', fn);
-        } catch {
-            break;
-        }
-    }
-
-    const timelineKeyframes = options.mode === 'timeline' ? options.timeline : [];
-    let lastRes;
-    let webmCount = 0;
-    let inArgs = [];
-    for (let frame = 1; frame < framesTotal; frame++) {
-        const fn = frame.toString().padStart(6, '0') + '.png';
-        const png = ffmpeg.FS('readFile', fn);
-        let args;
-        if (options.mode === 'trim') {
-            args = createTrimArgs(options.trim || readTrimSettings());
-        } else {
-            const size = {
-                bounce: () => getBounceResize(frame, Number(fps), options.bounce || readBounceSettings()),
-                random: () => getRandomResize(options.random || readRandomSettings()),
-                timeline: () => getTimelineResize(frame, framesTotal, timelineKeyframes || []),
-            }[options.mode]?.() || '100%x100%';
-            args = createResizeArgs(size);
-        }
-        const out = await Magick.Call([{ name: 'in.png', content: png }], args);
-        const res = out[0].name;
-        ffmpeg.FS('writeFile', fn, out[0].buffer);
-        if (!lastRes) lastRes = res;
-        if (lastRes !== res) {
-            await makeWebmPart(inArgs, webmCount);
-            webmCount++;
-            lastRes = res;
-            inArgs = [];
-        }
-        setProgress(10 + Math.floor((frame / Math.max(1, framesTotal - 1)) * 80));
-        inArgs.push(fn);
-    }
-    await makeWebmPart(inArgs, webmCount);
-    webmCount++;
-    setProgress(90);
-
-    let concat = "";
-    for (let i = 0; i < webmCount; i++) {
-        concat += `file ${i}.webm\n`;
-    }
-    ffmpeg.FS('writeFile', 'concat.txt', Uint8Array.from(concat.split('').map(letter => letter.charCodeAt(0))));
-    await ffmpeg.run('-y', '-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c', 'copy', 'vid.webm');
-    setProgress(95);
-    const finalArgs = ['-y', '-i', 'vid.webm', '-i', 'input.avi', '-c:v', 'copy', '-map', '0:v'];
-    if (options.includeAudio) {
-        finalArgs.push('-map', '1:a?');
-    }
-    finalArgs.push('-metadata', 'title=WeirdM', 'out.webm');
-    await ffmpeg.run(...finalArgs);
-    setProgress(100);
-    return ffmpeg.FS('readFile', 'out.webm');
 };
 
 const downloadURL = (data, fileName) => {
@@ -506,6 +286,65 @@ const downloadBlob = (data, fileName, mimeType) => {
     setTimeout(() => window.URL.revokeObjectURL(url), 1000);
 };
 
+const processVideo = (file, options, onStatus) => new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', 'process.php');
+    xhr.responseType = 'blob';
+
+    xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / Math.max(1, event.total)) * 30);
+            onStatus({ type: 'upload', percent });
+        } else {
+            onStatus({ type: 'upload' });
+        }
+    };
+
+    xhr.upload.onload = () => {
+        onStatus({ type: 'processing' });
+    };
+
+    xhr.onprogress = (event) => {
+        if (event.lengthComputable) {
+            const percent = 30 + Math.round((event.loaded / Math.max(1, event.total)) * 70);
+            onStatus({ type: 'download', percent });
+        } else {
+            onStatus({ type: 'download' });
+        }
+    };
+
+    xhr.onerror = () => {
+        reject(new Error('Network error while communicating with ffmpeg.'));
+    };
+
+    xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(xhr.response);
+            return;
+        }
+        if (xhr.response) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const data = JSON.parse(reader.result);
+                    reject(new Error(data.error || 'Unable to create WebM.'));
+                } catch (err) {
+                    reject(new Error(reader.result || 'Unable to create WebM.'));
+                }
+            };
+            reader.onerror = () => reject(new Error('Unable to decode error response.'));
+            reader.readAsText(xhr.response);
+        } else {
+            reject(new Error(`Unable to create WebM (HTTP ${xhr.status}).`));
+        }
+    };
+
+    const formData = new FormData();
+    formData.append('video', file);
+    formData.append('settings', JSON.stringify(options));
+    xhr.send(formData);
+});
+
 startBtn.addEventListener('click', () => {
     if (!filePicker.files || !filePicker.files.length) {
         alert('Pick a file first!');
@@ -520,31 +359,37 @@ startBtn.addEventListener('click', () => {
         }
     }
 
-    const reader = new FileReader();
-    const filename = filePicker.files[0].name.replace(/\.[^/.]+$/, "_weirdm.webm");
-    reader.onload = function () {
-        const array = new Uint8Array(this.result);
-        mode = settings.mode;
-        crf = settings.crf;
-        setProgress(0);
-        makeVideo(array, settings).then((final) => {
-            downloadBlob(final, filename, 'video/webm');
-            startBtn.disabled = false;
-            setProgress(-1);
-            try {
-                ffmpeg.exit();
-            } catch {}
-        }).catch((err) => {
-            console.error(err);
-            alert('Something went wrong while creating the WebM. Check the console for details.');
-            startBtn.disabled = false;
-            setProgress(-1);
-        });
-    };
-    reader.readAsArrayBuffer(filePicker.files[0]);
+    const inputFile = filePicker.files[0];
+    const filename = inputFile.name.replace(/\.[^/.]+$/, '_weirdm.webm');
     startBtn.disabled = true;
-    startBtn.innerText = 'Preparing…';
-    startBtn.style.background = '';
+    setProgress('Preparing…');
+
+    processVideo(inputFile, settings, (status) => {
+        if (status.type === 'upload') {
+            if (typeof status.percent === 'number') {
+                setProgress(`Uploading ${status.percent}%`, status.percent);
+            } else {
+                setProgress('Uploading…', 10);
+            }
+        } else if (status.type === 'processing') {
+            setProgress('Processing…');
+        } else if (status.type === 'download') {
+            if (typeof status.percent === 'number') {
+                setProgress(`Finalising ${status.percent}%`, status.percent);
+            } else {
+                setProgress('Finalising…');
+            }
+        }
+    }).then((blob) => {
+        downloadBlob(blob, filename, 'video/webm');
+        startBtn.disabled = false;
+        setProgress('Create WebM');
+    }).catch((err) => {
+        console.error(err);
+        alert(err.message || 'Something went wrong while creating the WebM. Check the console for details.');
+        startBtn.disabled = false;
+        setProgress('Create WebM');
+    });
 });
 
 initializeTimeline();

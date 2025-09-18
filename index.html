@@ -1,39 +1,51 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <link rel="icon" type="image/x-icon" href="/favicon.ico">
-    <link rel="stylesheet" type="text/css" href="app.css">
-    <script crossorigin="anonymous"
-            src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js"></script>
-    <script type="module">
-        import * as Magick from 'https://cdn.jsdelivr.net/npm/wasm-imagemagick@1.2.8/dist/magickApi.js';
-        window.Magick = Magick;
-    </script>
-    <title>WeirdM - Resizing WebM maker</title>
     <meta charset="UTF-8">
+    <title>WeirdM - Resizing WebM maker</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<h1 class="site-title">WeirdM</h1>
-<main class="layout">
-    <section class="panel panel-info">
-        <h2>What is WeirdM?</h2>
-        <p>WeirdM lets you create those weird WebM videos that resize as they play, from simple effects that work with any
-            video to fully custom animations that you control keyframe by keyframe.</p>
-        <p>Everything is processed locally in your browser&mdash;your video never leaves your device. The source code is
-            available on <a href="https://github.com/rebane2001/weirdm">GitHub</a>.</p>
-        <div class="resource-card">
-            <h3>Need a walkthrough?</h3>
-            <p>Watch the community-made tutorial for a complete introduction.</p>
-            <a class="button secondary" href="https://www.youtube.com/watch?v=Wf2filWCcJo" target="_blank"
-               rel="noopener">Watch the video guide</a>
+<div class="page">
+    <header class="header">
+        <div class="brand">
+            <h1>WeirdM</h1>
+            <p class="lead">Build the classic "weird" WebM that bends, bounces, and reshapes itself while it plays.</p>
+            <div class="resource-card">
+                <h2>Need a walkthrough?</h2>
+                <p>Watch the community-made tutorial for a complete introduction.</p>
+                <a class="button secondary" href="https://www.youtube.com/watch?v=Wf2filWCcJo" target="_blank" rel="noopener">Watch the video guide</a>
+            </div>
         </div>
-    </section>
-    <section class="panel panel-controls">
-        <form class="controls" id="controls-form" autocomplete="off">
-            <section class="card">
-                <h2>1. Pick an animation style</h2>
-                <p class="card-description">Choose how WeirdM should resize your video. Each style exposes detailed
-                    controls below.</p>
+        <div class="quick-start card">
+            <h2>Quick start</h2>
+            <p class="card-description">All processing happens locally using the ffmpeg executable installed on your machine.</p>
+            <label class="file-drop">
+                <span>Drop or choose a video</span>
+                <input type="file" id="filepicker" accept="video/*">
+            </label>
+            <button type="button" class="button start">Create WebM</button>
+            <p class="note">Tip: run <code>php -S localhost:2137</code> and open this folder to use WeirdM offline.</p>
+        </div>
+    </header>
+    <main class="workspace">
+        <section class="info card">
+            <h2>What is WeirdM?</h2>
+            <p>WeirdM lets you create WebM files whose resolution changes over time. Choose a preset animation, randomise
+                the chaos, design keyframes, or automatically trim away static borders. When you are ready, WeirdM hands
+                everything to your local ffmpeg build.</p>
+            <ul class="highlights">
+                <li>Runs entirely on your machine&mdash;no uploads, no tracking.</li>
+                <li>Precise bounce, random, and timeline controls with easing options.</li>
+                <li>Smart trim for removing letterboxing or transparent borders.</li>
+                <li>Fine-tune CRF, frame rate, and audio passthrough before exporting.</li>
+            </ul>
+        </section>
+        <form class="control-panel" id="controls-form" autocomplete="off">
+            <section class="card mode-card">
+                <h2>Animation style</h2>
+                <p class="card-description">Pick how WeirdM should resize your video. The options below update to match the selected mode.</p>
                 <div class="mode-list">
                     <label class="mode-option">
                         <input type="radio" id="bounce" name="mode" value="bounce" checked>
@@ -64,7 +76,6 @@
                         </div>
                     </label>
                 </div>
-
                 <div class="mode-options" id="bounce-options">
                     <h3>Bounce options</h3>
                     <div class="options-grid">
@@ -160,11 +171,9 @@
                         </fieldset>
                     </div>
                 </div>
-
                 <div class="mode-options" id="timeline-options" hidden>
                     <h3>Timeline options</h3>
-                    <p>Create keyframes that describe the size of the video at different points in the animation. The
-                        animation will smoothly interpolate between each keyframe.</p>
+                    <p>Create keyframes that describe the size of the video at different points in the animation. The animation will smoothly interpolate between each keyframe.</p>
                     <div class="timeline-table-wrapper">
                         <table class="timeline-table">
                             <thead>
@@ -176,8 +185,7 @@
                                 <th scope="col" aria-label="Actions"></th>
                             </tr>
                             </thead>
-                            <tbody id="timeline-rows">
-                            </tbody>
+                            <tbody id="timeline-rows"></tbody>
                         </table>
                     </div>
                     <div class="timeline-actions">
@@ -185,11 +193,9 @@
                         <button type="button" class="button subtle" id="reset-keyframes">Reset timeline</button>
                     </div>
                 </div>
-
                 <div class="mode-options" id="trim-options" hidden>
                     <h3>Smart trim options</h3>
-                    <p>Trim removes a solid color or transparent border from every frame. Tweak the fuzziness if your
-                        edges are noisy.</p>
+                    <p>Trim removes a solid color or transparent border from every frame. Tweak the fuzziness if your edges are noisy.</p>
                     <div class="options-grid single">
                         <label class="field">
                             <span>Edge similarity (fuzz %)</span>
@@ -202,10 +208,10 @@
                     </div>
                 </div>
             </section>
+            <section class="card output-card">
+                <h2>Output settings</h2>
+                <div class="options-grid compact">
 
-            <section class="card">
-                <h2>2. Output settings</h2>
-                <div class="options-grid single">
                     <label class="field">
                         <span>CRF (quality, lower is higher quality)</span>
                         <input id="crf" type="number" min="0" max="63" value="42">
@@ -220,17 +226,9 @@
                     </label>
                 </div>
             </section>
-
-            <section class="card">
-                <h2>3. Pick a source video</h2>
-                <p class="card-description">The processing happens on your device. Larger videos can take a while to
-                    render.</p>
-                <input type="file" id="filepicker" accept="video/*" class="file-input">
-                <button type="button" class="button start">Create WebM</button>
-            </section>
         </form>
-    </section>
-</main>
+    </main>
+</div>
 <script src="app.js"></script>
 </body>
 </html>
