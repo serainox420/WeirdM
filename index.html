@@ -13,59 +13,224 @@
     <meta charset="UTF-8">
 </head>
 <body>
-<h1>WeirdM</h1>
-<div class="container">
-    <h3>About</h3>
-    <p>WeirdM lets you create those weird WebM videos that resize as they play, from simple effects that work with
-        any video to advanced custom animations you can create yourself.</p>
-    <p>The processing happens locally in your browser, so your videos do not get sent to my server.
-        The source code is available on <a href="https://github.com/rebane2001/weirdm">GitHub</a>.</p>
-    <h3>Guide</h3>
-    <p>A video tutorial is available <a href="https://www.youtube.com/watch?v=Wf2filWCcJo">here</a>.</p>
-    <h3>Options</h3>
-    <input type="radio" id="bounce" name="mode" checked>
-    <label for="bounce">Bounce (simple)</label><br>
-    <input type="radio" id="random" name="mode">
-    <label for="random">Random (simple)</label><br>
-    <input type="radio" id="trim" name="mode">
-    <label for="trim">Trim (advanced)</label><br>
-    <br>
-    <div id="bounce-options">
-        <b>Horizontal</b><br>
-        <label for="bounce-h-style">Style:</label>
-        <select id="bounce-h-style">
-            <option value="sin">Sin</option>
-            <option value="cos">Cos</option>
-            <option value="none" selected="selected">None</option>
-        </select><br>
-        <label for="bounce-h-speed">Speed:</label>
-        <input id="bounce-h-speed" type="number" min="1" max="50" value="10"><br>
-        <br>
-        <b>Vertical</b><br>
-        <label for="bounce-v-style">Style:</label>
-        <select id="bounce-v-style">
-            <option value="sin" selected="selected">Sin</option>
-            <option value="cos">Cos</option>
-            <option value="none">None</option>
-        </select><br>
-        <label for="bounce-v-speed">Speed:</label>
-        <input id="bounce-v-speed" type="number" min="1" max="50" value="10"><br>
-    </div>
-    <div id="random-options" style="display: none">
-        <input type="checkbox" id="random-h" checked>
-        <label for="random-h">Horizontal</label><br>
-        <input type="checkbox" id="random-v" checked>
-        <label for="random-v">Vertical</label><br>
-    </div>
-    <div id="trim-options" style="display: none">
-        <p>Trim removes a solid color or transparency from all 4 borders of your video. Please check out the guide for more info.</p>
-    </div>
-    <br><label for="crf">CRF (quality, lower is better):</label>
-    <input id="crf" type="number" min="0" max="63" value="42"><br>
-    <h3>Pick a file</h3>
-    <input type="file" id="filepicker"/><br><br>
-    <button class="button start">Go!</button>
-</div>
+<h1 class="site-title">WeirdM</h1>
+<main class="layout">
+    <section class="panel panel-info">
+        <h2>What is WeirdM?</h2>
+        <p>WeirdM lets you create those weird WebM videos that resize as they play, from simple effects that work with any
+            video to fully custom animations that you control keyframe by keyframe.</p>
+        <p>Everything is processed locally in your browser&mdash;your video never leaves your device. The source code is
+            available on <a href="https://github.com/rebane2001/weirdm">GitHub</a>.</p>
+        <div class="resource-card">
+            <h3>Need a walkthrough?</h3>
+            <p>Watch the community-made tutorial for a complete introduction.</p>
+            <a class="button secondary" href="https://www.youtube.com/watch?v=Wf2filWCcJo" target="_blank"
+               rel="noopener">Watch the video guide</a>
+        </div>
+    </section>
+    <section class="panel panel-controls">
+        <form class="controls" id="controls-form" autocomplete="off">
+            <section class="card">
+                <h2>1. Pick an animation style</h2>
+                <p class="card-description">Choose how WeirdM should resize your video. Each style exposes detailed
+                    controls below.</p>
+                <div class="mode-list">
+                    <label class="mode-option">
+                        <input type="radio" id="bounce" name="mode" value="bounce" checked>
+                        <div>
+                            <span class="mode-title">Bounce</span>
+                            <span class="mode-desc">Oscillate the frame using sine or cosine waves.</span>
+                        </div>
+                    </label>
+                    <label class="mode-option">
+                        <input type="radio" id="random" name="mode" value="random">
+                        <div>
+                            <span class="mode-title">Random</span>
+                            <span class="mode-desc">Jump to random sizes within your chosen range.</span>
+                        </div>
+                    </label>
+                    <label class="mode-option">
+                        <input type="radio" id="timeline" name="mode" value="timeline">
+                        <div>
+                            <span class="mode-title">Timeline</span>
+                            <span class="mode-desc">Design a keyframe timeline for complete control.</span>
+                        </div>
+                    </label>
+                    <label class="mode-option">
+                        <input type="radio" id="trim" name="mode" value="trim">
+                        <div>
+                            <span class="mode-title">Smart trim</span>
+                            <span class="mode-desc">Automatically crop away solid borders or transparency.</span>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="mode-options" id="bounce-options">
+                    <h3>Bounce options</h3>
+                    <div class="options-grid">
+                        <fieldset class="axis-group">
+                            <legend>Horizontal motion</legend>
+                            <label class="field">
+                                <span>Waveform</span>
+                                <select id="bounce-h-style">
+                                    <option value="sin">Sine</option>
+                                    <option value="cos">Cosine</option>
+                                    <option value="none" selected>Static</option>
+                                </select>
+                            </label>
+                            <label class="field">
+                                <span>Speed</span>
+                                <input id="bounce-h-speed" type="number" min="1" max="80" value="10">
+                            </label>
+                            <label class="field">
+                                <span>Static size (%)</span>
+                                <input id="bounce-h-static" type="number" min="1" max="400" value="100">
+                            </label>
+                            <label class="field">
+                                <span>Minimum size (%)</span>
+                                <input id="bounce-h-min" type="number" min="1" max="400" value="70">
+                            </label>
+                            <label class="field">
+                                <span>Maximum size (%)</span>
+                                <input id="bounce-h-max" type="number" min="1" max="400" value="130">
+                            </label>
+                        </fieldset>
+                        <fieldset class="axis-group">
+                            <legend>Vertical motion</legend>
+                            <label class="field">
+                                <span>Waveform</span>
+                                <select id="bounce-v-style">
+                                    <option value="sin" selected>Sine</option>
+                                    <option value="cos">Cosine</option>
+                                    <option value="none">Static</option>
+                                </select>
+                            </label>
+                            <label class="field">
+                                <span>Speed</span>
+                                <input id="bounce-v-speed" type="number" min="1" max="80" value="10">
+                            </label>
+                            <label class="field">
+                                <span>Static size (%)</span>
+                                <input id="bounce-v-static" type="number" min="1" max="400" value="100">
+                            </label>
+                            <label class="field">
+                                <span>Minimum size (%)</span>
+                                <input id="bounce-v-min" type="number" min="1" max="400" value="70">
+                            </label>
+                            <label class="field">
+                                <span>Maximum size (%)</span>
+                                <input id="bounce-v-max" type="number" min="1" max="400" value="130">
+                            </label>
+                        </fieldset>
+                    </div>
+                </div>
+
+                <div class="mode-options" id="random-options" hidden>
+                    <h3>Random options</h3>
+                    <div class="options-grid">
+                        <fieldset class="axis-group">
+                            <legend>Horizontal</legend>
+                            <label class="toggle">
+                                <input type="checkbox" id="random-h" checked>
+                                <span>Allow random width changes</span>
+                            </label>
+                            <label class="field">
+                                <span>Minimum size (%)</span>
+                                <input id="random-h-min" type="number" min="1" max="400" value="60">
+                            </label>
+                            <label class="field">
+                                <span>Maximum size (%)</span>
+                                <input id="random-h-max" type="number" min="1" max="400" value="140">
+                            </label>
+                        </fieldset>
+                        <fieldset class="axis-group">
+                            <legend>Vertical</legend>
+                            <label class="toggle">
+                                <input type="checkbox" id="random-v" checked>
+                                <span>Allow random height changes</span>
+                            </label>
+                            <label class="field">
+                                <span>Minimum size (%)</span>
+                                <input id="random-v-min" type="number" min="1" max="400" value="60">
+                            </label>
+                            <label class="field">
+                                <span>Maximum size (%)</span>
+                                <input id="random-v-max" type="number" min="1" max="400" value="140">
+                            </label>
+                        </fieldset>
+                    </div>
+                </div>
+
+                <div class="mode-options" id="timeline-options" hidden>
+                    <h3>Timeline options</h3>
+                    <p>Create keyframes that describe the size of the video at different points in the animation. The
+                        animation will smoothly interpolate between each keyframe.</p>
+                    <div class="timeline-table-wrapper">
+                        <table class="timeline-table">
+                            <thead>
+                            <tr>
+                                <th scope="col">Position (%)</th>
+                                <th scope="col">Width (%)</th>
+                                <th scope="col">Height (%)</th>
+                                <th scope="col">Easing</th>
+                                <th scope="col" aria-label="Actions"></th>
+                            </tr>
+                            </thead>
+                            <tbody id="timeline-rows">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="timeline-actions">
+                        <button type="button" class="button secondary" id="add-keyframe">Add keyframe</button>
+                        <button type="button" class="button subtle" id="reset-keyframes">Reset timeline</button>
+                    </div>
+                </div>
+
+                <div class="mode-options" id="trim-options" hidden>
+                    <h3>Smart trim options</h3>
+                    <p>Trim removes a solid color or transparent border from every frame. Tweak the fuzziness if your
+                        edges are noisy.</p>
+                    <div class="options-grid single">
+                        <label class="field">
+                            <span>Edge similarity (fuzz %)</span>
+                            <input id="trim-fuzz" type="number" min="0" max="100" value="3">
+                        </label>
+                        <label class="field">
+                            <span>Extra padding (px)</span>
+                            <input id="trim-padding" type="number" min="0" max="50" value="1">
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>2. Output settings</h2>
+                <div class="options-grid single">
+                    <label class="field">
+                        <span>CRF (quality, lower is higher quality)</span>
+                        <input id="crf" type="number" min="0" max="63" value="42">
+                    </label>
+                    <label class="field">
+                        <span>Override output FPS</span>
+                        <input id="output-fps" type="number" min="1" max="120" placeholder="Match source">
+                    </label>
+                    <label class="toggle">
+                        <input type="checkbox" id="include-audio" checked>
+                        <span>Copy audio track when available</span>
+                    </label>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>3. Pick a source video</h2>
+                <p class="card-description">The processing happens on your device. Larger videos can take a while to
+                    render.</p>
+                <input type="file" id="filepicker" accept="video/*" class="file-input">
+                <button type="button" class="button start">Create WebM</button>
+            </section>
+        </form>
+    </section>
+</main>
 <script src="app.js"></script>
 </body>
 </html>
