@@ -13,8 +13,13 @@ function respondError(string $message, int $status = 400): void
     exit;
 }
 
-if (!function_exists('imagecreatefrompng')) {
-    respondError('PHP GD extension with PNG support is required.', 500);
+$IMAGE_BACKEND = null;
+if (function_exists('imagecreatefrompng')) {
+    $IMAGE_BACKEND = 'gd';
+} elseif (class_exists('\Imagick')) {
+    $IMAGE_BACKEND = 'imagick';
+} else {
+    respondError('Either the PHP GD extension with PNG support or the Imagick extension is required.', 500);
 }
 
 function recursiveRemove(string $path): void
@@ -292,7 +297,55 @@ function colorDifference(array $a, array $b): float
     return abs($a['r'] - $b['r']) + abs($a['g'] - $b['g']) + abs($a['b'] - $b['b']) + abs($a['a'] - $b['a']);
 }
 
-function trimImage($image, array $settings, int $frameNumber): array
+function loadFrameGd(string $framePath, int $frameNumber): array
+{
+    $image = imagecreatefrompng($framePath);
+    if (!$image) {
+        respondError(sprintf('Failed to load frame %d for processing.', $frameNumber), 500);
+    }
+    $width = imagesx($image);
+    $height = imagesy($image);
+    if ($width <= 0 || $height <= 0) {
+        imagedestroy($image);
+        respondError(sprintf('Frame %d has invalid dimensions.', $frameNumber), 500);
+    }
+
+    return [$image, $width, $height];
+}
+
+function prepareGdCanvas(int $width, int $height)
+{
+    $canvas = imagecreatetruecolor($width, $height);
+    if (!$canvas) {
+        respondError('Failed to allocate image canvas.', 500);
+    }
+    imagesavealpha($canvas, true);
+    imagealphablending($canvas, false);
+    $transparent = imagecolorallocatealpha($canvas, 0, 0, 0, 127);
+    imagefill($canvas, 0, 0, $transparent);
+
+    return $canvas;
+}
+
+function resizeImageGd($image, int $newWidth, int $newHeight, int $baseWidth, int $baseHeight)
+{
+    $processed = prepareGdCanvas($newWidth, $newHeight);
+    imagecopyresampled($processed, $image, 0, 0, 0, 0, $newWidth, $newHeight, $baseWidth, $baseHeight);
+    imagedestroy($image);
+
+    return $processed;
+}
+
+function saveImageGd($image, string $path): void
+{
+    if (!imagepng($image, $path)) {
+        imagedestroy($image);
+        respondError('Failed to write processed frame to disk.', 500);
+    }
+    imagedestroy($image);
+}
+
+function trimImageGd($image, array $settings, int $frameNumber): array
 {
     $width = imagesx($image);
     $height = imagesy($image);
@@ -373,15 +426,200 @@ function trimImage($image, array $settings, int $frameNumber): array
     $cropWidth = max(1, $right - $left + 1);
     $cropHeight = max(1, $bottom - $top + 1);
 
-    $trimmed = imagecreatetruecolor($cropWidth, $cropHeight);
-    imagesavealpha($trimmed, true);
-    imagealphablending($trimmed, false);
-    $transparent = imagecolorallocatealpha($trimmed, 0, 0, 0, 127);
-    imagefill($trimmed, 0, 0, $transparent);
+    $trimmed = prepareGdCanvas($cropWidth, $cropHeight);
     imagecopy($trimmed, $image, 0, 0, $left, $top, $cropWidth, $cropHeight);
     imagedestroy($image);
 
     return [$trimmed, $cropWidth, $cropHeight];
+}
+
+function loadFrameImagick(string $framePath, int $frameNumber): array
+{
+    try {
+        $image = new \Imagick($framePath);
+    } catch (\ImagickException $exception) {
+        respondError(sprintf('Failed to load frame %d for processing.', $frameNumber), 500);
+    }
+
+    $width = $image->getImageWidth();
+    $height = $image->getImageHeight();
+    if ($width <= 0 || $height <= 0) {
+        $image->destroy();
+        respondError(sprintf('Frame %d has invalid dimensions.', $frameNumber), 500);
+    }
+
+    $image->setImageAlphaChannel(\Imagick::ALPHACHANNEL_ACTIVATE);
+    $image->setImageBackgroundColor(new \ImagickPixel('transparent'));
+
+    return [$image, $width, $height];
+}
+
+function resizeImageImagick($image, int $newWidth, int $newHeight)
+{
+    $processed = clone $image;
+    $image->destroy();
+
+    if (!$processed->resizeImage($newWidth, $newHeight, \Imagick::FILTER_LANCZOS, 1.0)) {
+        $processed->destroy();
+        respondError('Failed to resize frame.', 500);
+    }
+
+    $processed->setImageAlphaChannel(\Imagick::ALPHACHANNEL_ACTIVATE);
+
+    return $processed;
+}
+
+function trimImageImagick($image, array $settings, int $frameNumber): array
+{
+    $width = $image->getImageWidth();
+    $height = $image->getImageHeight();
+    if ($width <= 0 || $height <= 0) {
+        return [$image, $width, $height];
+    }
+
+    $backgroundPixels = $image->exportImagePixels(0, 0, 1, 1, 'RGBA', \Imagick::PIXEL_CHAR);
+    if ($backgroundPixels === false || count($backgroundPixels) < 4) {
+        $clone = clone $image;
+        $image->destroy();
+        return [$clone, $width, $height];
+    }
+    $background = [
+        'r' => (int)$backgroundPixels[0],
+        'g' => (int)$backgroundPixels[1],
+        'b' => (int)$backgroundPixels[2],
+        'a' => (int)$backgroundPixels[3],
+    ];
+
+    $threshold = clamp($settings['fuzz'] / 100.0 * 1020.0, 0, 1020);
+
+    $top = 0;
+    for (; $top < $height; $top++) {
+        $row = $image->exportImagePixels(0, $top, $width, 1, 'RGBA', \Imagick::PIXEL_CHAR);
+        if ($row === false) {
+            break;
+        }
+        $allMatch = true;
+        for ($x = 0; $x < $width; $x++) {
+            $offset = $x * 4;
+            $pixel = [
+                'r' => (int)$row[$offset],
+                'g' => (int)$row[$offset + 1],
+                'b' => (int)$row[$offset + 2],
+                'a' => (int)$row[$offset + 3],
+            ];
+            if (colorDifference($pixel, $background) > $threshold) {
+                $allMatch = false;
+                break;
+            }
+        }
+        if (!$allMatch) {
+            break;
+        }
+    }
+
+    $bottom = $height - 1;
+    for (; $bottom >= $top; $bottom--) {
+        $row = $image->exportImagePixels(0, $bottom, $width, 1, 'RGBA', \Imagick::PIXEL_CHAR);
+        if ($row === false) {
+            break;
+        }
+        $allMatch = true;
+        for ($x = 0; $x < $width; $x++) {
+            $offset = $x * 4;
+            $pixel = [
+                'r' => (int)$row[$offset],
+                'g' => (int)$row[$offset + 1],
+                'b' => (int)$row[$offset + 2],
+                'a' => (int)$row[$offset + 3],
+            ];
+            if (colorDifference($pixel, $background) > $threshold) {
+                $allMatch = false;
+                break;
+            }
+        }
+        if (!$allMatch) {
+            break;
+        }
+    }
+
+    $left = 0;
+    for (; $left < $width; $left++) {
+        $column = $image->exportImagePixels($left, $top, 1, $bottom - $top + 1, 'RGBA', \Imagick::PIXEL_CHAR);
+        if ($column === false) {
+            break;
+        }
+        $allMatch = true;
+        for ($y = 0; $y <= $bottom - $top; $y++) {
+            $offset = $y * 4;
+            $pixel = [
+                'r' => (int)$column[$offset],
+                'g' => (int)$column[$offset + 1],
+                'b' => (int)$column[$offset + 2],
+                'a' => (int)$column[$offset + 3],
+            ];
+            if (colorDifference($pixel, $background) > $threshold) {
+                $allMatch = false;
+                break;
+            }
+        }
+        if (!$allMatch) {
+            break;
+        }
+    }
+
+    $right = $width - 1;
+    for (; $right >= $left; $right--) {
+        $column = $image->exportImagePixels($right, $top, 1, $bottom - $top + 1, 'RGBA', \Imagick::PIXEL_CHAR);
+        if ($column === false) {
+            break;
+        }
+        $allMatch = true;
+        for ($y = 0; $y <= $bottom - $top; $y++) {
+            $offset = $y * 4;
+            $pixel = [
+                'r' => (int)$column[$offset],
+                'g' => (int)$column[$offset + 1],
+                'b' => (int)$column[$offset + 2],
+                'a' => (int)$column[$offset + 3],
+            ];
+            if (colorDifference($pixel, $background) > $threshold) {
+                $allMatch = false;
+                break;
+            }
+        }
+        if (!$allMatch) {
+            break;
+        }
+    }
+
+    if ($left >= $right || $top >= $bottom) {
+        $clone = clone $image;
+        $image->destroy();
+        return [$clone, $width, $height];
+    }
+
+    $padding = (int)round($settings['padding']);
+    if ($padding > 0) {
+        $left = min($right - 1, $left + $padding);
+        $top = min($bottom - 1, $top + $padding);
+        $right = max($left + 1, $right - $padding);
+        $bottom = max($top + 1, $bottom - $padding);
+    }
+
+    $cropWidth = max(1, $right - $left + 1);
+    $cropHeight = max(1, $bottom - $top + 1);
+
+    $processed = clone $image;
+    if (!$processed->cropImage($cropWidth, $cropHeight, $left, $top)) {
+        $processed->destroy();
+        $image->destroy();
+        respondError(sprintf('Failed to crop frame %d.', $frameNumber), 500);
+    }
+    $processed->setImagePage(0, 0, 0, 0);
+    $processed->setImageAlphaChannel(\Imagick::ALPHACHANNEL_ACTIVATE);
+    $image->destroy();
+
+    return [$processed, $cropWidth, $cropHeight];
 }
 
 function concatLine(string $path): string
@@ -462,19 +700,19 @@ $currentSegment = null;
 
 foreach ($framePaths as $index => $framePath) {
     $frameNumber = $index + 1;
-    $image = imagecreatefrompng($framePath);
-    if (!$image) {
-        respondError(sprintf('Failed to load frame %d for processing.', $frameNumber), 500);
-    }
-    $baseWidth = imagesx($image);
-    $baseHeight = imagesy($image);
-    if ($baseWidth <= 0 || $baseHeight <= 0) {
-        respondError(sprintf('Frame %d has invalid dimensions.', $frameNumber), 500);
+    if ($IMAGE_BACKEND === 'gd') {
+        [$image, $baseWidth, $baseHeight] = loadFrameGd($framePath, $frameNumber);
+    } else {
+        [$image, $baseWidth, $baseHeight] = loadFrameImagick($framePath, $frameNumber);
     }
 
     switch ($mode) {
         case 'trim':
-            [$processed, $newWidth, $newHeight] = trimImage($image, $trimSettings, $frameNumber);
+            if ($IMAGE_BACKEND === 'gd') {
+                [$processed, $newWidth, $newHeight] = trimImageGd($image, $trimSettings, $frameNumber);
+            } else {
+                [$processed, $newWidth, $newHeight] = trimImageImagick($image, $trimSettings, $frameNumber);
+            }
             break;
         case 'random':
             $widthPercent = $randomSettings['horizontal']['enabled']
@@ -485,25 +723,21 @@ foreach ($framePaths as $index => $framePath) {
                 : 100;
             $newWidth = max(1, (int)round($baseWidth * ($widthPercent / 100)));
             $newHeight = max(1, (int)round($baseHeight * ($heightPercent / 100)));
-            $processed = imagecreatetruecolor($newWidth, $newHeight);
-            imagesavealpha($processed, true);
-            imagealphablending($processed, false);
-            $transparent = imagecolorallocatealpha($processed, 0, 0, 0, 127);
-            imagefill($processed, 0, 0, $transparent);
-            imagecopyresampled($processed, $image, 0, 0, 0, 0, $newWidth, $newHeight, $baseWidth, $baseHeight);
-            imagedestroy($image);
+            if ($IMAGE_BACKEND === 'gd') {
+                $processed = resizeImageGd($image, $newWidth, $newHeight, $baseWidth, $baseHeight);
+            } else {
+                $processed = resizeImageImagick($image, $newWidth, $newHeight);
+            }
             break;
         case 'timeline':
             [$widthPercent, $heightPercent] = computeTimelinePercent($frameNumber, $frameCount, $timelineSettings);
             $newWidth = max(1, (int)round($baseWidth * ($widthPercent / 100)));
             $newHeight = max(1, (int)round($baseHeight * ($heightPercent / 100)));
-            $processed = imagecreatetruecolor($newWidth, $newHeight);
-            imagesavealpha($processed, true);
-            imagealphablending($processed, false);
-            $transparent = imagecolorallocatealpha($processed, 0, 0, 0, 127);
-            imagefill($processed, 0, 0, $transparent);
-            imagecopyresampled($processed, $image, 0, 0, 0, 0, $newWidth, $newHeight, $baseWidth, $baseHeight);
-            imagedestroy($image);
+            if ($IMAGE_BACKEND === 'gd') {
+                $processed = resizeImageGd($image, $newWidth, $newHeight, $baseWidth, $baseHeight);
+            } else {
+                $processed = resizeImageImagick($image, $newWidth, $newHeight);
+            }
             break;
         case 'bounce':
         default:
@@ -511,19 +745,25 @@ foreach ($framePaths as $index => $framePath) {
             $heightPercent = computeBouncePercent($frameNumber, $fps, $bounceSettings['vertical']);
             $newWidth = max(1, (int)round($baseWidth * ($widthPercent / 100)));
             $newHeight = max(1, (int)round($baseHeight * ($heightPercent / 100)));
-            $processed = imagecreatetruecolor($newWidth, $newHeight);
-            imagesavealpha($processed, true);
-            imagealphablending($processed, false);
-            $transparent = imagecolorallocatealpha($processed, 0, 0, 0, 127);
-            imagefill($processed, 0, 0, $transparent);
-            imagecopyresampled($processed, $image, 0, 0, 0, 0, $newWidth, $newHeight, $baseWidth, $baseHeight);
-            imagedestroy($image);
+            if ($IMAGE_BACKEND === 'gd') {
+                $processed = resizeImageGd($image, $newWidth, $newHeight, $baseWidth, $baseHeight);
+            } else {
+                $processed = resizeImageImagick($image, $newWidth, $newHeight);
+            }
             break;
     }
 
     $processedPath = $processedDir . DIRECTORY_SEPARATOR . sprintf('%06d.png', $frameNumber);
-    imagepng($processed, $processedPath);
-    imagedestroy($processed);
+    if ($IMAGE_BACKEND === 'gd') {
+        saveImageGd($processed, $processedPath);
+    } else {
+        $processed->setImageFormat('png');
+        if (!$processed->writeImage($processedPath)) {
+            $processed->destroy();
+            respondError(sprintf('Failed to write frame %d.', $frameNumber), 500);
+        }
+        $processed->destroy();
+    }
 
     if (!$currentSegment) {
         $currentSegment = ['width' => $newWidth, 'height' => $newHeight, 'start' => $frameNumber, 'count' => 1];
