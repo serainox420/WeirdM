@@ -96,6 +96,94 @@ function clamp(float $value, float $min, float $max): float
     return max($min, min($max, $value));
 }
 
+function parseIniSize(string $value): int
+{
+    $trimmed = trim($value);
+    if ($trimmed === '') {
+        return 0;
+    }
+    if (is_numeric($trimmed)) {
+        return (int)max(0, round((float)$trimmed));
+    }
+    $unit = strtolower($trimmed[strlen($trimmed) - 1]);
+    $numeric = (float)substr($trimmed, 0, -1);
+    $multipliers = ['g' => 1024 ** 3, 'm' => 1024 ** 2, 'k' => 1024];
+    if (isset($multipliers[$unit])) {
+        return (int)max(0, round($numeric * $multipliers[$unit]));
+    }
+    return (int)max(0, round($numeric));
+}
+
+function formatBytes(int $bytes): string
+{
+    if ($bytes <= 0) {
+        return '0 B';
+    }
+    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    $value = (float)$bytes;
+    $index = 0;
+    while ($value >= 1024 && $index < count($units) - 1) {
+        $value /= 1024;
+        $index++;
+    }
+    $precision = $value >= 10 || $index === 0 ? 0 : 1;
+    return rtrim(rtrim(number_format($value, $precision, '.', ''), '0'), '.') . ' ' . $units[$index];
+}
+
+function gatherUploadLimits(): array
+{
+    $uploadMaxValue = ini_get('upload_max_filesize');
+    $postMaxValue = ini_get('post_max_size');
+    $uploadMax = $uploadMaxValue !== false ? parseIniSize((string)$uploadMaxValue) : 0;
+    $postMax = $postMaxValue !== false ? parseIniSize((string)$postMaxValue) : 0;
+    $limits = array_filter([$uploadMax, $postMax], static fn(int $limit) => $limit > 0);
+    $effective = $limits ? (int)min($limits) : 0;
+
+    $sources = [];
+    if ($effective > 0) {
+        if ($uploadMax > 0 && $uploadMax === $effective) {
+            $sources[] = ['name' => 'upload_max_filesize', 'bytes' => $uploadMax];
+        }
+        if ($postMax > 0 && $postMax === $effective) {
+            $sources[] = ['name' => 'post_max_size', 'bytes' => $postMax];
+        }
+    }
+
+    if (!$sources) {
+        if ($uploadMax > 0) {
+            $sources[] = ['name' => 'upload_max_filesize', 'bytes' => $uploadMax];
+        }
+        if ($postMax > 0) {
+            $sources[] = ['name' => 'post_max_size', 'bytes' => $postMax];
+        }
+    }
+
+    return [$uploadMax, $postMax, $effective, $sources];
+}
+
+function describeUploadLimitSources(array $sources): string
+{
+    if (!$sources) {
+        return 'PHP limits';
+    }
+    $labels = [];
+    foreach ($sources as $source) {
+        if (!is_array($source) || !isset($source['name'])) {
+            continue;
+        }
+        $bytes = isset($source['bytes']) ? (int)$source['bytes'] : 0;
+        $labels[] = sprintf('%s (%s)', $source['name'], formatBytes($bytes));
+    }
+    if (!$labels) {
+        return 'PHP limits';
+    }
+    $unique = array_values(array_unique($labels));
+    if (count($unique) === 1) {
+        return $unique[0];
+    }
+    return implode(' and ', $unique);
+}
+
 function detectBinary(string $binary): string
 {
     $path = trim((string)shell_exec('command -v ' . escapeshellarg($binary)));
@@ -627,11 +715,51 @@ function concatLine(string $path): string
     return "file '" . str_replace("'", "'\\''", $path) . "'\n";
 }
 
+[$uploadMaxBytes, $postMaxBytes, $effectiveUploadBytes, $uploadLimitSources] = gatherUploadLimits();
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     respondError('Use POST to submit a video.', 405);
 }
 
+if ($effectiveUploadBytes > 0) {
+    $contentLength = isset($_SERVER['CONTENT_LENGTH']) ? (int)$_SERVER['CONTENT_LENGTH'] : 0;
+    if ($contentLength > $effectiveUploadBytes) {
+        $sourceText = describeUploadLimitSources($uploadLimitSources);
+        respondError(
+            sprintf(
+                'The uploaded file is too large for the current PHP configuration (%s). Increase upload_max_filesize and post_max_size to accept files larger than %s.',
+                $sourceText,
+                formatBytes($effectiveUploadBytes)
+            ),
+            413
+        );
+    }
+}
+
 if (!isset($_FILES['video']) || $_FILES['video']['error'] !== UPLOAD_ERR_OK) {
+    $uploadError = $_FILES['video']['error'] ?? UPLOAD_ERR_NO_FILE;
+    if (in_array($uploadError, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
+        $sourceText = describeUploadLimitSources($uploadLimitSources);
+        respondError(
+            sprintf(
+                'The uploaded file exceeds the PHP upload limit (%s). Increase upload_max_filesize and post_max_size, then restart the server.',
+                $sourceText
+            ),
+            413
+        );
+    }
+    if ($uploadError === UPLOAD_ERR_NO_FILE) {
+        respondError('Upload failed. Ensure a video file is selected.');
+    }
+    if ($uploadError === UPLOAD_ERR_PARTIAL) {
+        respondError('Upload failed because the file was only partially transferred. Try again.');
+    }
+    if ($uploadError === UPLOAD_ERR_NO_TMP_DIR || $uploadError === UPLOAD_ERR_CANT_WRITE) {
+        respondError('PHP was unable to write the uploaded file to the temporary directory. Check your PHP configuration.', 500);
+    }
+    if ($uploadError === UPLOAD_ERR_EXTENSION) {
+        respondError('A PHP extension stopped the upload. Check your php.ini configuration and installed extensions.', 500);
+    }
     respondError('Upload failed. Ensure a video file is selected.');
 }
 
