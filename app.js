@@ -2,6 +2,82 @@ const filePicker = document.getElementById('filepicker');
 const startBtn = document.querySelector('.button.start');
 const timelineBody = document.getElementById('timeline-rows');
 
+let uploadLimitInfo = null;
+
+const formatBytes = (bytes) => {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let value = bytes;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+    }
+    const decimals = value >= 10 || unitIndex === 0 ? 0 : 1;
+    return `${value.toFixed(decimals)} ${units[unitIndex]}`;
+};
+
+const describeLimitSources = (sources) => {
+    if (!Array.isArray(sources) || !sources.length) return 'the PHP upload limit';
+    if (sources.length === 1) return sources[0];
+    if (sources.length === 2) return `${sources[0]} and ${sources[1]}`;
+    return `${sources.slice(0, -1).join(', ')}, and ${sources[sources.length - 1]}`;
+};
+
+const readLimitNumber = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
+const fetchUploadLimit = () => {
+    fetch('limits.php', { cache: 'no-store' })
+        .then((response) => {
+            if (!response.ok) {
+                throw new Error('Failed to load upload limits');
+            }
+            return response.json();
+        })
+        .then((data) => {
+            if (!data || typeof data !== 'object') return;
+            const effective = readLimitNumber(data.effectiveBytes);
+            const uploadMax = readLimitNumber(data.uploadMaxBytes);
+            const postMax = readLimitNumber(data.postMaxBytes);
+            let sources = Array.isArray(data.effectiveSources)
+                ? data.effectiveSources.filter((name) => typeof name === 'string' && name.trim().length)
+                : [];
+
+            if (effective > 0) {
+                if (!sources.length) {
+                    if (uploadMax > 0 && uploadMax === effective) sources.push('upload_max_filesize');
+                    if (postMax > 0 && postMax === effective) sources.push('post_max_size');
+                }
+                uploadLimitInfo = { bytes: effective, sources };
+                return;
+            }
+
+            if (uploadMax > 0 || postMax > 0) {
+                const fallbackSources = [];
+                let fallbackBytes = 0;
+                if (uploadMax > 0) {
+                    fallbackSources.push('upload_max_filesize');
+                    fallbackBytes = fallbackBytes > 0 ? Math.min(fallbackBytes, uploadMax) : uploadMax;
+                }
+                if (postMax > 0) {
+                    fallbackSources.push('post_max_size');
+                    fallbackBytes = fallbackBytes > 0 ? Math.min(fallbackBytes, postMax) : postMax;
+                }
+                uploadLimitInfo = { bytes: fallbackBytes, sources: fallbackSources };
+            }
+        })
+        .catch(() => {
+            uploadLimitInfo = uploadLimitInfo || null;
+        });
+};
+
+if (typeof fetch === 'function') {
+    fetchUploadLimit();
+}
+
 const setProgress = (label, progress = null) => {
     startBtn.textContent = label;
     if (progress === null || Number.isNaN(progress)) {
@@ -360,6 +436,16 @@ startBtn.addEventListener('click', () => {
     }
 
     const inputFile = filePicker.files[0];
+    if (uploadLimitInfo && uploadLimitInfo.bytes > 0 && inputFile.size > uploadLimitInfo.bytes) {
+        const fileSize = formatBytes(inputFile.size);
+        const limitSize = formatBytes(uploadLimitInfo.bytes);
+        const sourceLabel = describeLimitSources(uploadLimitInfo.sources);
+        alert(
+            `The selected file is ${fileSize}, but the PHP server currently limits uploads to ${limitSize} (${sourceLabel}).\n` +
+            'Increase upload_max_filesize and post_max_size in your php.ini or .user.ini, then restart the server to work with larger videos.'
+        );
+        return;
+    }
     const filename = inputFile.name.replace(/\.[^/.]+$/, '_weirdm.webm');
     startBtn.disabled = true;
     setProgress('Preparing…');

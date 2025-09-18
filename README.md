@@ -19,6 +19,12 @@ php -S localhost:2137
 Then open <http://localhost:2137> in your browser. The interface runs entirely client-side and posts jobs to
 `process.php`, which shells out to `ffmpeg` using the settings you choose.
 
+### Handling large uploads
+
+The bundled `.user.ini` raises PHP's `upload_max_filesize` and `post_max_size` to 256&nbsp;MB so you can work with
+longer source videos. If your installation uses a different configuration file, adjust those directives there and
+restart the PHP server. WeirdM will warn you in the browser if a chosen file exceeds the PHP upload limit.
+
 ## Features
 
 - **Bounce, random, timeline, and trim** animation modes with the same advanced controls as the browser-only version.
